@@ -1,0 +1,13 @@
+# Put one link per line, then run:  ./grab
+#
+# Lines starting with # are ignored. Anything works:
+#
+#   https://www.youtube.com/shorts/VIDEO_ID       a single Short
+#   https://youtu.be/VIDEO_ID                     a single video
+#   https://www.youtube.com/@somechannel          that channel's Shorts tab
+#   https://www.youtube.com/@somechannel/videos   that channel's normal videos
+#   https://www.youtube.com/playlist?list=PL...   a whole playlist
+#   https://www.instagram.com/reel/SHORTCODE/     a single reel
+#   https://www.instagram.com/someaccount/        every reel on that page
+#   ig:someaccount                                same, shorthand
+#   yt:@somechannel                               same, shorthand

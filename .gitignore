@@ -1,0 +1,10 @@
+.venv/
+downloads/
+config.json
+failed.txt
+__pycache__/
+*.pyc
+cookies.txt
+*.part
+*.ytdl
+.DS_Store
