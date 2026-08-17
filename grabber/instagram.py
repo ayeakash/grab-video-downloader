@@ -104,6 +104,36 @@ def _build_loader(jar: CookieJar | None, should_stop, budget: dict):
     return loader
 
 
+def check_session(jar: CookieJar | None) -> dict:
+    """Verify a browser's Instagram cookies and report who they belong to."""
+    cookies = instagram_cookies(jar)
+    if not cookies:
+        return {
+            "ok": False,
+            "detail": "No Instagram cookies in that browser profile. "
+            "Open instagram.com there, log in, then check again.",
+        }
+    if "sessionid" not in cookies:
+        return {
+            "ok": False,
+            "detail": f"Found {len(cookies)} Instagram cookie(s) but no login session. "
+            "You are probably signed out in that profile.",
+        }
+    try:
+        loader = _build_loader(jar, lambda: False, {"slept": 0.0})
+    except Exception as exc:
+        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+
+    name = getattr(loader.context, "username", None)
+    if name:
+        return {"ok": True, "detail": f"Logged in as @{name}", "username": name}
+    return {
+        "ok": False,
+        "detail": "Instagram rejected these cookies. Re-open instagram.com in that "
+        "browser profile to refresh the session, then check again.",
+    }
+
+
 def _iter_posts(loader, profile, want_reels_only: bool):
     """Prefer the dedicated reels feed, fall back to the full post grid."""
     if want_reels_only and hasattr(profile, "get_reels"):

@@ -109,15 +109,33 @@ will fail without a session. Log in to Instagram in a normal browser, then:
 ./grab https://www.instagram.com/someaccount --cookies-browser chrome
 ```
 
+In the web UI, the **Instagram login** dropdown lists every browser profile
+found on this Mac by name (e.g. "Chrome — Freelancer"), and **Check Instagram
+login** verifies the session, reports which account it belongs to, and saves it
+as your default. Do that once and you are done.
+
+**If you use more than one Chrome profile, this matters.** Plain `chrome` means
+Chrome's *Default* profile only. If you are logged into Instagram in a second
+profile, a bare `chrome` finds no session and the listing fails — which looks
+identical to not being logged in at all. Name the profile explicitly:
+
+```bash
+./grab https://www.instagram.com/someaccount --cookies-browser "chrome:Profile 2"
+```
+
 Supported: `chrome`, `chromium`, `brave`, `edge`, `safari`, `firefox`, `opera`,
-`vivaldi`, `whale`. Add a profile with `chrome:Profile 2`. A `cookies.txt` file
-works too, via `--cookies cookies.txt`.
+`vivaldi`, `whale`. A `cookies.txt` file works too, via `--cookies cookies.txt`.
 
 Make it the default so you stop typing it:
 
 ```bash
-./grab --cookies-browser chrome --save-config
+./grab --cookies-browser "chrome:Profile 2" --save-config
 ```
+
+> The first read of a Chrome/Brave/Edge cookie store makes macOS ask for your
+> **login keychain password** — those browsers encrypt cookies with a key kept
+> there, so any tool reading them has to unlock it. Choosing "Always Allow"
+> stops it asking again. Denying is fine; Instagram simply stays unavailable.
 
 Without a session, listing a profile now fails **immediately** with that
 message rather than appearing to hang. This matters because instaloader's

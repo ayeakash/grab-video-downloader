@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .config import Config
-from .cookies import CookieError, load_jar
+from .cookies import CookieError, list_browser_profiles, load_jar
 from .engine import Downloader, VideoTask, expand_source, load_archive_ids
 from .sources import parse_input
 
@@ -434,6 +434,9 @@ class Handler(BaseHTTPRequestHandler):
         route = self.path.split("?")[0]
         if route in ("/", "/index.html"):
             self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
+        elif route == "/api/browsers":
+            saved = Config.load().cookies_browser or ""
+            self._json({"options": list_browser_profiles(), "selected": saved})
         elif route == "/api/state":
             # ?items=0 keeps the 2x/second poll small once the list is loaded.
             want = "items=0" not in self.path
@@ -474,6 +477,30 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._spawn(download_selected_job, self.state, indexes, data.get("options") or {})
             self._json({"ok": True})
+
+        elif route == "/api/checklogin":
+            from .instagram import check_session
+
+            browser = (self._body().get("browser") or "").strip()
+            if not browser:
+                self._json({"ok": False, "detail": "Pick a browser profile first."})
+                return
+            try:
+                jar = load_jar(None, browser)
+            except CookieError as exc:
+                self._json({"ok": False, "detail": str(exc)})
+                return
+            result = check_session(jar)
+            if result.get("ok"):
+                # Remember it, so this only has to be done once.
+                cfg = Config.load()
+                cfg.cookies_browser = browser
+                try:
+                    cfg.save()
+                    result["detail"] += " · saved as your default"
+                except OSError:
+                    pass
+            self._json(result)
 
         elif route == "/api/cancel":
             self.state.cancel.set()
@@ -685,12 +712,7 @@ ig:natgeo"></textarea>
       <div>
         <label for="cookiesBrowser">Instagram login</label>
         <select id="cookiesBrowser">
-          <option value="">None</option>
-          <option value="chrome">Chrome</option>
-          <option value="safari">Safari</option>
-          <option value="firefox">Firefox</option>
-          <option value="brave">Brave</option>
-          <option value="edge">Edge</option>
+          <option value="">None — YouTube only</option>
         </select>
       </div>
       <div>
@@ -701,6 +723,11 @@ ig:natgeo"></textarea>
           <option value="shorts,videos">Both</option>
         </select>
       </div>
+    </div>
+
+    <div class="hint" id="loginrow">
+      <button class="link" id="checkLogin">Check Instagram login</button>
+      <span id="loginstatus"></span>
     </div>
 
     <div class="checks">
@@ -895,6 +922,45 @@ $('dl').onclick = async () => {
 };
 
 $('stop').onclick = () => post('/api/cancel');
+
+// Populate the Instagram login list with the browser profiles that actually
+// exist. "Chrome" alone means Chrome's Default profile, which is the usual
+// reason a session appears to be missing when you are logged in elsewhere.
+(async () => {
+  try {
+    const d = await (await fetch('/api/browsers')).json();
+    const sel = $('cookiesBrowser');
+    for (const o of d.options) {
+      const el = document.createElement('option');
+      el.value = o.value;
+      el.textContent = o.label;
+      sel.appendChild(el);
+    }
+    if (d.selected) sel.value = d.selected;
+  } catch (e) { /* leave the None-only list in place */ }
+})();
+
+$('checkLogin').onclick = async () => {
+  const browser = $('cookiesBrowser').value;
+  const status = $('loginstatus');
+  if (!browser) {
+    status.textContent = ' — pick a browser profile first.';
+    status.style.color = 'var(--bad)';
+    return;
+  }
+  status.style.color = 'var(--muted)';
+  status.textContent = ' — checking… macOS may ask for your keychain password.';
+  $('checkLogin').disabled = true;
+  try {
+    const d = await post('/api/checklogin', {browser});
+    status.textContent = ' — ' + d.detail;
+    status.style.color = d.ok ? 'var(--ok)' : 'var(--bad)';
+  } catch (e) {
+    status.textContent = ' — check failed.';
+    status.style.color = 'var(--bad)';
+  }
+  $('checkLogin').disabled = false;
+};
 
 $('kill').onclick = async () => {
   const warning = 'Immediately terminate all downloads, ffmpeg processes, and the local server? Partial files will be kept.';
