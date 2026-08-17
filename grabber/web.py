@@ -228,6 +228,7 @@ def build_config(options: dict) -> Config:
         cfg.quality = str(options["quality"])
     cfg.audio_only = bool(options.get("audio"))
     cfg.use_archive = not options.get("noArchive")
+    cfg.ig_gentle = bool(options.get("igGentle"))
 
     browser = (options.get("cookiesBrowser") or "").strip()
     cfg.cookies_browser = browser or None
@@ -733,7 +734,10 @@ ig:natgeo"></textarea>
     <div class="checks">
       <label><input type="checkbox" id="audio"> Audio only (mp3)</label>
       <label><input type="checkbox" id="noArchive"> Re-download existing</label>
+      <label><input type="checkbox" id="igGentle"> Gentle Instagram pace</label>
     </div>
+    <div class="hint">Gentle pace downloads Instagram one at a time with a 4s gap —
+      slower, but less likely to get you rate-limited.</div>
 
     <div class="row">
       <button class="primary" id="preview">Preview first</button>
@@ -788,6 +792,7 @@ function options() {
     tabs: $('tabs').value,
     audio: $('audio').checked,
     noArchive: $('noArchive').checked,
+    igGentle: $('igGentle').checked,
   };
 }
 

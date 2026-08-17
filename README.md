@@ -137,16 +137,24 @@ Make it the default so you stop typing it:
 > there, so any tool reading them has to unlock it. Choosing "Always Allow"
 > stops it asking again. Denying is fine; Instagram simply stays unavailable.
 
-Without a session, listing a profile now fails **immediately** with that
-message rather than appearing to hang. This matters because instaloader's
-built-in reaction to Instagram's rate limiting is to sleep until its sliding
-window clears — up to about eleven minutes, silently. `grab` caps any single
-wait at 12s and the total at 45s, then gives up with an explanation.
+Listing **does** work without a session — Instagram just throttles it hard, so
+expect waits. Logging in is dramatically faster and far less fragile.
 
-Instagram also rate-limits hard. Downloads from it are deliberately serialized
-with a delay between each; if you start seeing failures, wait 10–15 minutes.
-Pointing this at a very large profile in one go is the fastest way to get
-temporarily blocked — set **Max per page** to keep listings short.
+Those waits used to be invisible: instaloader's reaction to a 429 is to sleep
+until its sliding window clears, up to about eleven minutes, printing nothing.
+That is what made the app look hung. The waiting is still allowed, but it is
+now announced in the activity log, capped (90s per wait; 7 min total when
+anonymous, 90s when logged in), and **Stop** interrupts it.
+
+### Instagram speed
+
+Instagram downloads run 3 at a time with a 1s gap. Tick **Gentle Instagram
+pace** to fall back to one at a time with a 4s gap — roughly 4× slower, but
+much less likely to get you temporarily rate-limited. If you start seeing
+failures mid-run, switch to gentle and wait 10–15 minutes before retrying.
+
+Large profiles are the main way to get blocked; **Max per page** keeps both
+the listing and the download short.
 
 > On macOS, reading Chrome cookies may prompt for your Keychain password, and
 > Safari requires Full Disk Access for your terminal.

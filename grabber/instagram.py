@@ -19,11 +19,14 @@ from .cookies import instagram_cookies
 REQUEST_TIMEOUT = 20.0
 CONNECTION_ATTEMPTS = 2
 
-# instaloader's own 429 handler sleeps until its sliding window clears, which
-# is up to ~11 minutes, silently. We would rather fail in seconds and tell the
-# user to log in, so any single wait and the total waiting are both capped.
-MAX_SINGLE_WAIT = 12.0
-MAX_TOTAL_WAIT = 45.0
+# instaloader's own 429 handler sleeps until its sliding window clears (~11
+# minutes) with no output, which is what made the app look hung. Anonymous
+# listing does eventually succeed after such a wait, so the waiting is kept --
+# but it is capped, announced, and interruptible. Logged-in sessions should
+# rarely be throttled at all, hence the much smaller budget.
+MAX_SINGLE_WAIT = 90.0
+ANON_TOTAL_WAIT = 420.0
+AUTH_TOTAL_WAIT = 90.0
 
 
 class InstagramError(RuntimeError):
@@ -49,31 +52,36 @@ class ProfileItem:
     owner: str = ""
 
 
-def _bounded_rate_controller(should_stop, budget: dict):
-    """A RateController that refuses to sleep for minutes at a time.
+def _bounded_rate_controller(should_stop, budget: dict, progress):
+    """A RateController whose waits are bounded, announced and interruptible.
 
-    Instagram answers unauthenticated listing calls with 429, and instaloader's
-    stock response is to sleep until its sliding window clears. Capping the wait
-    turns a silent ten-minute stall into a fast, explainable failure, and gives
-    the Stop button something to interrupt.
+    Instagram throttles unauthenticated listing hard, and instaloader's stock
+    response is to sleep until its sliding window clears without printing a
+    thing. The wait is legitimate -- the listing does succeed afterwards -- so
+    it is preserved, but the user gets told it is happening and Stop works.
     """
     from instaloader import RateController
 
     class Bounded(RateController):
         def sleep(self, secs: float) -> None:
-            if secs > MAX_SINGLE_WAIT or budget["slept"] + secs > MAX_TOTAL_WAIT:
+            allowance = budget["total"] - budget["slept"]
+            if secs > MAX_SINGLE_WAIT or secs > allowance:
                 raise InstagramAborted("rate-limited")
+            progress(
+                f"  Instagram rate limit — waiting {secs:.0f}s"
+                + ("" if budget["logged_in"] else " (logging in avoids most of this)")
+            )
             end = time.monotonic() + secs
             while time.monotonic() < end:
                 if should_stop():
                     raise InstagramAborted("stopped")
-                time.sleep(min(0.4, end - time.monotonic()))
+                time.sleep(min(0.4, max(0.05, end - time.monotonic())))
             budget["slept"] += secs
 
     return Bounded
 
 
-def _build_loader(jar: CookieJar | None, should_stop, budget: dict):
+def _build_loader(jar: CookieJar | None, should_stop, budget: dict, progress=None):
     import instaloader
 
     loader = instaloader.Instaloader(
@@ -86,7 +94,9 @@ def _build_loader(jar: CookieJar | None, should_stop, budget: dict):
         save_metadata=False,
         max_connection_attempts=CONNECTION_ATTEMPTS,
         request_timeout=REQUEST_TIMEOUT,
-        rate_controller=_bounded_rate_controller(should_stop, budget),
+        rate_controller=_bounded_rate_controller(
+            should_stop, budget, progress or (lambda _m: None)
+        ),
     )
 
     cookies = instagram_cookies(jar)
@@ -120,7 +130,9 @@ def check_session(jar: CookieJar | None) -> dict:
             "You are probably signed out in that profile.",
         }
     try:
-        loader = _build_loader(jar, lambda: False, {"slept": 0.0})
+        loader = _build_loader(
+            jar, lambda: False, {"slept": 0.0, "total": AUTH_TOTAL_WAIT, "logged_in": True}
+        )
     except Exception as exc:
         return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
 
@@ -202,9 +214,9 @@ def _aborted_message(exc: InstagramAborted, username: str) -> str:
     if str(exc) == "stopped":
         return f"Stopped while listing @{username}."
     return (
-        f"Instagram is rate-limiting this account, so listing @{username} was "
-        "abandoned rather than waiting out its ~10 minute cooldown. Wait a few "
-        "minutes and retry, or set 'Max per page' to fetch fewer at a time."
+        f"Instagram kept rate-limiting the listing of @{username}, so it was "
+        f"abandoned rather than waiting indefinitely. {LOGIN_HINT} Logging in "
+        "makes this far faster; otherwise wait a few minutes and retry."
     )
 
 
@@ -226,22 +238,26 @@ def list_profile_videos(
     stop = should_stop or (lambda: False)
     progress = on_progress or (lambda _msg: None)
 
-    # Bail out before touching the network when there is no session. Instagram
-    # answers anonymous profile queries with 429/400, and the retry-and-sleep
-    # that follows is what used to stall the app for ten minutes.
-    if "sessionid" not in instagram_cookies(jar):
-        raise InstagramError(
-            f"Instagram needs a logged-in session to list @{username}. {LOGIN_HINT}"
+    # Anonymous listing is not blocked outright: Instagram throttles it, but it
+    # does succeed after waiting, and for some profiles that is the only route a
+    # user has. It is merely slow and fragile, so say so up front.
+    has_session = "sessionid" in instagram_cookies(jar)
+    budget = {
+        "slept": 0.0,
+        "total": AUTH_TOTAL_WAIT if has_session else ANON_TOTAL_WAIT,
+        "logged_in": has_session,
+    }
+    if not has_session:
+        progress(
+            f"  No Instagram session — listing @{username} anonymously, which "
+            f"Instagram throttles heavily. {LOGIN_HINT}"
         )
 
-    budget = {"slept": 0.0}
-    loader = _build_loader(jar, stop, budget)
+    loader = _build_loader(jar, stop, budget, progress)
     logged_in = bool(getattr(loader.context, "username", None))
-    if not logged_in:
-        raise InstagramError(
-            f"Your Instagram cookies were rejected, so @{username} cannot be listed. "
-            "Re-open Instagram in your browser to refresh the session, then retry."
-        )
+    budget["logged_in"] = logged_in
+    if has_session and not logged_in:
+        progress("  Those cookies were rejected; continuing without a session.")
 
     try:
         profile = instaloader.Profile.from_username(loader.context, username)

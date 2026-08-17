@@ -208,8 +208,8 @@ def download_opts(cfg: Config, platform: str, state: dict | None = None) -> dict
         opts["postprocessors"] = postprocessors
 
     if platform == "instagram":
-        opts["sleep_interval"] = cfg.ig_sleep
-        opts["max_sleep_interval"] = cfg.ig_sleep * 2
+        opts["sleep_interval"] = cfg.instagram_sleep
+        opts["max_sleep_interval"] = cfg.instagram_sleep * 2
 
     return opts
 
@@ -408,7 +408,7 @@ class Downloader:
         self.cfg = cfg
         self.progress = progress
         self.cancel = cancel  # threading.Event, or None
-        self._ig_gate = threading.Semaphore(max(1, cfg.ig_jobs))
+        self._ig_gate = threading.Semaphore(max(1, cfg.instagram_jobs))
         self._lock = threading.Lock()
         # Worker thread id -> its row in the progress display.
         self._rows: dict[int, int] = {}

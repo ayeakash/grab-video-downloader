@@ -20,8 +20,23 @@ class Config:
     # Parallelism. Instagram gets its own much lower cap because it rate-limits
     # aggressively and will temporarily block an account that hammers it.
     jobs: int = 4
-    ig_jobs: int = 1
-    ig_sleep: float = 4.0
+    # Instagram still gets a tighter cap than YouTube because it rate-limits on
+    # the per-post page fetch, but fully serialising it with a 4s pause made a
+    # 142-reel profile take ~40 minutes. Media itself comes from a CDN that
+    # tolerates concurrency fine. ig_gentle restores the cautious old pace.
+    ig_jobs: int = 3
+    ig_sleep: float = 1.0
+    ig_gentle: bool = False
+    ig_gentle_jobs: int = 1
+    ig_gentle_sleep: float = 4.0
+
+    @property
+    def instagram_jobs(self) -> int:
+        return self.ig_gentle_jobs if self.ig_gentle else min(self.ig_jobs, self.jobs)
+
+    @property
+    def instagram_sleep(self) -> float:
+        return self.ig_gentle_sleep if self.ig_gentle else self.ig_sleep
 
     # Length filtering. mode is one of: shorts, long, all
     length_mode: str = "shorts"
