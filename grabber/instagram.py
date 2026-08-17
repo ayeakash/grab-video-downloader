@@ -28,8 +28,11 @@ MAX_SINGLE_WAIT = 90.0
 ANON_TOTAL_WAIT = 420.0
 AUTH_TOTAL_WAIT = 90.0
 
-# Ceiling for the gallery-dl fallback, which runs as a subprocess.
-GALLERY_DL_TIMEOUT = 300.0
+# Ceiling for the gallery-dl fallback, which runs as a subprocess. Paging a
+# large profile anonymously is genuinely slow -- Instagram throttles every
+# page -- so this is generous rather than snappy. Use 'Max per page' to keep
+# listings short if you would rather not wait.
+GALLERY_DL_TIMEOUT = 1800.0
 
 
 class InstagramError(RuntimeError):
@@ -346,6 +349,17 @@ def list_profile_videos(
             f"  No Instagram session — listing @{username} anonymously, which "
             f"Instagram throttles heavily. {LOGIN_HINT}"
         )
+
+    # Without a session, go straight to gallery-dl. instaloader's GraphQL
+    # paging is throttled hard when anonymous -- measured at 70+ retries and
+    # many minutes for a single profile -- while gallery-dl reads the same
+    # reels tab in seconds. instaloader stays the primary path when logged in,
+    # where it is reliable and returns richer metadata.
+    if not has_session:
+        try:
+            return _gallery_dl_profile(username, limit, cookies_browser, progress)
+        except InstagramError as exc:
+            progress(f"  gallery-dl could not list @{username} ({exc}); trying instaloader.")
 
     loader = _build_loader(jar, stop, budget, progress)
     logged_in = bool(getattr(loader.context, "username", None))
