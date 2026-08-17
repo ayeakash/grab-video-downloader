@@ -8,7 +8,9 @@ one machine -- there is no auth, so do not expose it to a network.
 from __future__ import annotations
 
 import json
+import os
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -26,6 +28,62 @@ MARKUP = re.compile(r"\[/?[a-z0-9 #_]+\]")
 def plain(text: str) -> str:
     """Strip rich console markup so the browser shows clean text."""
     return MARKUP.sub("", str(text)).strip()
+
+
+def _descendant_pids(root_pid: int) -> list[int]:
+    """Return every current descendant of root_pid, parents before children."""
+    try:
+        result = subprocess.run(
+            ["ps", "-axo", "pid=,ppid="],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    children: dict[int, list[int]] = {}
+    for line in result.stdout.splitlines():
+        try:
+            pid_text, parent_text = line.split()
+            pid, parent = int(pid_text), int(parent_text)
+        except (TypeError, ValueError):
+            continue
+        children.setdefault(parent, []).append(pid)
+
+    descendants: list[int] = []
+    pending = list(children.get(root_pid, ()))
+    while pending:
+        pid = pending.pop()
+        descendants.append(pid)
+        pending.extend(children.get(pid, ()))
+    return descendants
+
+
+def _kill_program(state: "JobState") -> None:
+    """Terminate downloads, helper processes, worker threads, and this server."""
+    state.cancel.set()
+    # yt-dlp runs in this process, while ffmpeg and similar helpers are child
+    # processes. Kill deepest descendants first so none are orphaned when the
+    # Python server exits.
+    descendants = _descendant_pids(os.getpid())
+    for pid in reversed(descendants):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    time.sleep(0.35)
+    for pid in reversed(descendants):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    # Python cannot safely kill arbitrary worker threads. Exiting the process
+    # is the reliable way to stop blocked resolver/download threads as well as
+    # the HTTP server. os._exit deliberately skips waiting for those threads.
+    os._exit(0)
 
 
 class JobState:
@@ -420,6 +478,12 @@ class Handler(BaseHTTPRequestHandler):
             self.state.note("Stopping — partial files are kept and resume next run.")
             self._json({"ok": True})
 
+        elif route == "/api/kill":
+            self.state.cancel.set()
+            self.state.note("Killing the downloader and all helper processes now.")
+            self._json({"ok": True})
+            threading.Thread(target=_kill_program, args=(self.state,), daemon=True).start()
+
         elif route == "/api/reveal":
             target = Path(self.state.out_dir or ".")
             if target.exists():
@@ -507,6 +571,8 @@ PAGE = r"""<!doctype html>
   .primary:disabled { opacity: .5; cursor: not-allowed; }
   .ghost { background: transparent; color: var(--ink); border-color: var(--line); }
   .ghost:disabled { opacity: .45; cursor: not-allowed; }
+  .danger { background: var(--bad); color: #fff; }
+  .danger:hover { filter: brightness(.92); }
   .link { background: none; border: none; color: var(--accent); padding: 0;
           font-size: 13px; font-weight: 500; cursor: pointer; }
   .hint { color: var(--muted); font-size: 12.5px; margin-top: 9px; }
@@ -643,7 +709,8 @@ ig:natgeo"></textarea>
     <div class="row">
       <button class="primary" id="preview">Preview first</button>
       <button class="ghost" id="go">Download everything</button>
-      <button class="ghost" id="stop" style="display:none">Stop</button>
+      <button class="ghost" id="stop" style="display:none">Stop downloads</button>
+      <button class="danger" id="kill">Kill program</button>
       <button class="ghost" id="reveal">Open folder</button>
     </div>
     <div class="hint" id="err" style="color:var(--bad)"></div>
@@ -826,6 +893,18 @@ $('dl').onclick = async () => {
 };
 
 $('stop').onclick = () => post('/api/cancel');
+
+$('kill').onclick = async () => {
+  const warning = 'Immediately terminate all downloads, ffmpeg processes, and the local server? Partial files will be kept.';
+  if (!confirm(warning)) return;
+  clearInterval(timer);
+  $('kill').disabled = true;
+  $('stop').style.display = 'none';
+  $('phase').textContent = 'Program terminated';
+  $('err').textContent = 'The downloader has been killed. You can close this tab.';
+  try { await post('/api/kill'); } catch (_) {}
+  setTimeout(() => window.close(), 500);
+};
 
 $('reveal').onclick = async () => {
   const d = await post('/api/reveal');

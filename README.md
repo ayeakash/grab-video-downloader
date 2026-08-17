@@ -29,7 +29,10 @@ Double-click **`Open Downloader.command`** in Finder, or run:
 
 A page opens at <http://127.0.0.1:8765> with a box to paste links into and
 dropdowns for the options. It shows live progress and a summary when done.
-Ctrl-C in the terminal stops the server.
+Ctrl-C in the terminal stops the server. In the web UI, **Stop downloads**
+cancels the current batch while leaving the app running. **Kill program**
+immediately terminates downloads, ffmpeg/helper processes, and the local web
+server; partial files remain available for resuming later.
 
 There are two buttons:
 
