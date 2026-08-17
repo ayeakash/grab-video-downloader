@@ -24,8 +24,8 @@ class Config:
     # the per-post page fetch, but fully serialising it with a 4s pause made a
     # 142-reel profile take ~40 minutes. Media itself comes from a CDN that
     # tolerates concurrency fine. ig_gentle restores the cautious old pace.
-    ig_jobs: int = 3
-    ig_sleep: float = 1.0
+    ig_jobs: int = 4
+    ig_sleep: float = 0.5
     ig_gentle: bool = False
     ig_gentle_jobs: int = 1
     ig_gentle_sleep: float = 4.0

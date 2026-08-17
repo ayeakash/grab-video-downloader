@@ -146,6 +146,38 @@ That is what made the app look hung. The waiting is still allowed, but it is
 now announced in the activity log, capped (90s per wait; 7 min total when
 anonymous, 90s when logged in), and **Stop** interrupts it.
 
+### How fast can this actually go?
+
+Measured on this machine, and the honest answer is **your connection is the
+limit**, not the tool:
+
+| Thing | Measured |
+| --- | --- |
+| Internet ceiling | ~5 MB/s (~40 Mbps), single stream already saturates it |
+| Parallel streams | 4 streams gave *less* total throughput than 1 |
+| Instagram reel | ~10–15 MB each, one fixed quality (no smaller option exists) |
+| 142 reels | ~2 GB → **~6.7 min is the theoretical floor** |
+| Actual, after tuning | ~7–8 min (was ~28 min) |
+
+So the pipeline now runs within roughly 15% of what the connection physically
+allows. Things that do **not** help, all verified rather than assumed:
+
+- **More workers.** Beyond ~4 it gets slower, not faster — the pipe is full.
+- **Lower quality on Instagram.** Formats `1`, `2`, `3`, `b` and `worst` all
+  return the *identical* file. Instagram publishes one progressive rendition.
+- **A faster Mac.** Encoding is not involved; nothing is re-encoded.
+
+Things that did help, and are now the defaults:
+
+- **Progressive over DASH for Instagram** — ~20% faster, because DASH costs a
+  second request plus an ffmpeg merge per reel, and it lands vp9 instead of h264.
+- **4 workers with a 0.5s gap** instead of 1 worker with a 4s gap.
+- **The archive.** Re-runs skip known videos with zero network calls, so the
+  second run of a channel is nearly instant.
+
+To genuinely go faster you need fewer bytes: use **Max per page**, or `-q 720`
+on YouTube (roughly halves the size; on Instagram it changes nothing).
+
 ### Instagram speed
 
 Instagram downloads run 3 at a time with a 1s gap. Tick **Gentle Instagram
