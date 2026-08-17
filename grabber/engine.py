@@ -229,20 +229,30 @@ def download_opts(cfg: Config, platform: str, state: dict | None = None) -> dict
 # --------------------------------------------------------------------------
 
 
-def expand_source(src: Source, cfg: Config, jar=None, on_note=None, should_stop=None) -> list[VideoTask]:
-    """Turn one Source into concrete video tasks."""
+def expand_source(
+    src: Source, cfg: Config, jar=None, on_note=None, should_stop=None, on_error=None
+) -> list[VideoTask]:
+    """Turn one Source into concrete video tasks.
+
+    on_error reports a source failing outright, as distinct from a note. The
+    caller needs that separation: "resolved nothing because it failed" and
+    "resolved nothing because you already have it all" must not look alike.
+    """
     note = on_note or (lambda _msg: None)
+    fail = on_error or (lambda _msg: None)
 
     if src.platform == "instagram" and src.kind == "profile":
-        return _expand_instagram_profile(src, cfg, jar, note, should_stop)
+        return _expand_instagram_profile(src, cfg, jar, note, should_stop, fail)
 
     if src.is_container:
-        return _expand_with_ytdlp(src, cfg, note)
+        return _expand_with_ytdlp(src, cfg, note, fail)
 
     return [VideoTask(url=src.url, platform=src.platform, origin=src.label, video_id=src.label)]
 
 
-def _expand_instagram_profile(src: Source, cfg: Config, jar, note, should_stop=None) -> list[VideoTask]:
+def _expand_instagram_profile(
+    src: Source, cfg: Config, jar, note, should_stop=None, fail=None
+) -> list[VideoTask]:
     from .instagram import InstagramError, list_profile_videos
 
     note(f"Listing reels for @{src.label}…")
@@ -256,6 +266,8 @@ def _expand_instagram_profile(src: Source, cfg: Config, jar, note, should_stop=N
         )
     except InstagramError as exc:
         note(f"[red]@{src.label}: {exc}[/red]")
+        if fail:
+            fail(f"@{src.label}: {exc}")
         return []
 
     tasks = []
@@ -288,7 +300,7 @@ def _channel_tab_urls(src: Source, cfg: Config) -> list[str]:
     return [f"{src.url}/{tab}" for tab in tabs]
 
 
-def _expand_with_ytdlp(src: Source, cfg: Config, note) -> list[VideoTask]:
+def _expand_with_ytdlp(src: Source, cfg: Config, note, fail=None) -> list[VideoTask]:
     from yt_dlp import YoutubeDL
     from yt_dlp.utils import DownloadError
 
@@ -318,9 +330,13 @@ def _expand_with_ytdlp(src: Source, cfg: Config, note) -> list[VideoTask]:
                 info = ydl.extract_info(url, download=False)
         except DownloadError as exc:
             note(f"[yellow]{label}: {exc}[/yellow]")
+            if fail:
+                fail(f"{label}: {exc}")
             continue
         except Exception as exc:
             note(f"[yellow]{label}: {exc}[/yellow]")
+            if fail:
+                fail(f"{label}: {exc}")
             continue
 
         if not info:

@@ -106,6 +106,7 @@ class JobState:
         self.failures: list[dict] = []
         self.items: list[dict] = []
         self.tasks: list[VideoTask] = []
+        self.errors: list[str] = []
         self.out_dir = ""
         self.started = 0.0
         self.cancel.clear()
@@ -131,6 +132,12 @@ class JobState:
             self.notes.append(text)
             del self.notes[:-200]
 
+    def fail(self, message) -> None:
+        text = plain(message)
+        with self.lock:
+            if text and text not in self.errors:
+                self.errors.append(text)
+
     def set_phase(self, phase: str) -> None:
         with self.lock:
             self.phase = phase
@@ -152,6 +159,7 @@ class JobState:
                 "failures": self.failures,
                 "outDir": self.out_dir,
                 "count": len(self.items),
+                "errors": list(self.errors),
                 "elapsed": round(time.monotonic() - self.started, 1) if self.started else 0,
                 "cancelling": self.cancel.is_set() and self.phase == "downloading",
             }
@@ -275,7 +283,12 @@ def _resolve(state: JobState, links_text: str, options: dict) -> list[VideoTask]
         if state.cancel.is_set():
             break
         for task in expand_source(
-            src, cfg, jar=jar, on_note=state.note, should_stop=state.cancel.is_set
+            src,
+            cfg,
+            jar=jar,
+            on_note=state.note,
+            should_stop=state.cancel.is_set,
+            on_error=state.fail,
         ):
             key = task.video_id or task.url
             if key in seen:
@@ -363,10 +376,14 @@ def run_job(state: JobState, links_text: str, options: dict) -> None:
         if tasks is None:
             return
         if not tasks:
-            state.note("No videos matched.")
-            with state.lock:
-                state.summary = {"downloaded": 0, "skipped": 0, "filtered": 0, "failed": 0}
-            state.set_phase("done")
+            # No summary tiles here: a green "0 downloaded" next to "Finished"
+            # reads as success when the sources actually failed to resolve.
+            state.note(
+                "Nothing to download — see the reasons above."
+                if state.errors
+                else "No videos matched your filters."
+            )
+            state.set_phase("empty")
             return
         _download(state, tasks, options)
     except Exception as exc:
@@ -661,6 +678,10 @@ PAGE = r"""<!doctype html>
   .tile span { font-size: 12px; color: var(--muted); text-transform: uppercase;
                letter-spacing: .04em; }
   .tile.ok b { color: var(--ok); } .tile.bad b { color: var(--bad); }
+  .problem { border-left: 3px solid var(--bad); background: var(--bar);
+             border-radius: 0 7px 7px 0; padding: 9px 12px; margin-top: 12px;
+             font-size: 13px; }
+  .problem b { color: var(--bad); display: block; margin-bottom: 3px; }
   .fail { border-left: 3px solid var(--bad); padding: 7px 0 7px 11px;
           margin-top: 9px; font-size: 13px; }
   .fail div:last-child { color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -771,6 +792,7 @@ ig:natgeo"></textarea>
       <span class="el"><span id="count"></span> <span id="elapsed"></span></span>
     </div>
     <div class="bar"><i id="overall"></i></div>
+    <div id="problems"></div>
     <div id="files" style="margin-top:16px"></div>
     <div id="summary"></div>
     <h2 style="margin-top:18px">Activity</h2>
@@ -987,7 +1009,7 @@ $('reveal').onclick = async () => {
 const PHASES = {
   resolving: 'Finding videos…',
   ready: 'Ready — pick what to download',
-  empty: 'Nothing to download',
+  empty: 'Nothing downloaded',
   downloading: 'Downloading…',
   done: 'Finished',
   error: 'Stopped',
@@ -1020,6 +1042,9 @@ async function poll() {
             <span>${size}</span></div>
             <div class="bar"><i style="width:${pct}%"></i></div></div>`;
   }).join('');
+
+  $('problems').innerHTML = (s.errors || []).map(e =>
+    `<div class="problem"><b>Could not read this source</b>${esc(e)}</div>`).join('');
 
   const log = $('log');
   const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
