@@ -255,6 +255,14 @@ def build_config(options: dict) -> Config:
 
     browser = (options.get("cookiesBrowser") or "").strip()
     cfg.cookies_browser = browser or None
+    # Remember the pick. Previously it lived only in the page, so every fresh
+    # tab silently reverted to anonymous -- which is how a whole run ends up
+    # rate-limited without the user ever choosing that.
+    if browser and browser != Config.load().cookies_browser:
+        try:
+            cfg.save()
+        except OSError:
+            pass
 
     out = (options.get("outDir") or "").strip()
     if out:
@@ -345,6 +353,14 @@ def _download(state: JobState, tasks: list[VideoTask], options: dict) -> None:
 
     state.note(f"Downloading {len(tasks)} video(s) with {cfg.jobs} worker(s)")
     state.set_phase("downloading")
+
+    insta = sum(1 for t in tasks if t.platform == "instagram")
+    if insta and not cfg.has_cookies:
+        state.note(
+            f"No Instagram login set, so these {insta} download(s) run anonymously at a "
+            f"reduced pace ({cfg.instagram_jobs} at a time). Instagram cuts anonymous "
+            "access off quickly — set 'Instagram login' to your browser to avoid failures."
+        )
 
     downloader = Downloader(cfg, WebProgress(state), cancel=state.cancel)
     gone = sum(1 for t in tasks if t.video_id in downloader.missing_ids)

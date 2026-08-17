@@ -606,6 +606,22 @@ class Downloader:
         return f"[dim]{tag}[/dim] {name}"
 
 
+def _friendly_download_error(text: str) -> str | None:
+    """Turn yt-dlp's noisiest failures into one actionable sentence."""
+    low = text.lower()
+    if "rate-limit" in low or "redirected to the login page" in low:
+        return (
+            "Instagram rate-limited anonymous access. Pick your browser under "
+            "'Instagram login' and click 'Check Instagram login' — logged-in "
+            "downloads have a far higher limit. Then wait ~15 min and retry."
+        )
+    if "login required" in low or "requires authentication" in low:
+        return "Instagram wants a login for this post. Set 'Instagram login' to your browser."
+    if "video unavailable" in low or "not available" in low:
+        return "The video is unavailable (deleted, private, or region-locked)."
+    return None
+
+
 def _tidy_error(message: str, logger: _Silent) -> str:
     text = message.strip()
     for prefix in ("ERROR: ", "[0;31mERROR:[0m "):
@@ -614,4 +630,6 @@ def _tidy_error(message: str, logger: _Silent) -> str:
     if not text and logger.errors:
         text = logger.errors[-1]
     text = " ".join(text.split())
-    return text[:300] if text else "unknown error"
+    if not text:
+        return "unknown error"
+    return _friendly_download_error(text) or text[:300]

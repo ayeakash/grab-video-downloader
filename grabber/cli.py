@@ -455,6 +455,14 @@ def main(argv: list[str] | None = None) -> int:
                 console.print("[yellow]Nothing selected.[/yellow]")
                 return 0
 
+    insta = sum(1 for t in tasks if t.platform == "instagram")
+    if insta and not cfg.has_cookies:
+        console.print(
+            f"[yellow]No Instagram login set — {insta} download(s) will run anonymously at "
+            f"{cfg.instagram_jobs} at a time. Instagram cuts anonymous access off quickly; "
+            "pass --cookies-browser chrome to avoid failures.[/yellow]"
+        )
+
     console.print(f"[bold]Downloading {len(tasks)} video(s)[/bold] with {cfg.jobs} worker(s)\n")
 
     start = time.monotonic()

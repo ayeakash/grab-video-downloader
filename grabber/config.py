@@ -29,14 +29,31 @@ class Config:
     ig_gentle: bool = False
     ig_gentle_jobs: int = 1
     ig_gentle_sleep: float = 4.0
+    # Anonymous downloading has a far lower ceiling than a logged-in session:
+    # Instagram starts redirecting post pages to the login screen after a
+    # modest number of hits. The fast pace is only safe with cookies.
+    ig_anon_jobs: int = 2
+    ig_anon_sleep: float = 3.0
+
+    @property
+    def has_cookies(self) -> bool:
+        return bool(self.cookies_browser or self.cookies_file)
 
     @property
     def instagram_jobs(self) -> int:
-        return self.ig_gentle_jobs if self.ig_gentle else min(self.ig_jobs, self.jobs)
+        if self.ig_gentle:
+            return self.ig_gentle_jobs
+        if not self.has_cookies:
+            return self.ig_anon_jobs
+        return min(self.ig_jobs, self.jobs)
 
     @property
     def instagram_sleep(self) -> float:
-        return self.ig_gentle_sleep if self.ig_gentle else self.ig_sleep
+        if self.ig_gentle:
+            return self.ig_gentle_sleep
+        if not self.has_cookies:
+            return self.ig_anon_sleep
+        return self.ig_sleep
 
     # Length filtering. mode is one of: shorts, long, all
     length_mode: str = "shorts"
