@@ -420,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
     seen: set[str] = set()
     with console.status("[cyan]Working…", spinner="dots"):
         for src in sources:
-            for task in expand_source(src, cfg, jar=jar, on_note=console.print):
+            for task in expand_source(src, cfg, jar=jar, on_note=console.print, should_stop=None):
                 key = task.video_id or task.url
                 if key in seen:
                     continue

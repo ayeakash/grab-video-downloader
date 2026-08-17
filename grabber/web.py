@@ -273,7 +273,9 @@ def _resolve(state: JobState, links_text: str, options: dict) -> list[VideoTask]
     for src in sources:
         if state.cancel.is_set():
             break
-        for task in expand_source(src, cfg, jar=jar, on_note=state.note):
+        for task in expand_source(
+            src, cfg, jar=jar, on_note=state.note, should_stop=state.cancel.is_set
+        ):
             key = task.video_id or task.url
             if key in seen:
                 continue
@@ -343,8 +345,8 @@ def resolve_only_job(state: JobState, links_text: str, options: dict) -> None:
         if tasks is None:
             return
         if not tasks:
-            state.note("No videos matched.")
-            state.set_phase("ready")
+            state.note("Nothing to download — see the reasons above.")
+            state.set_phase("empty")
             return
         state.note(f"Found {len(tasks)} video(s). Pick which ones to download.")
         state.set_phase("ready")
@@ -914,6 +916,7 @@ $('reveal').onclick = async () => {
 const PHASES = {
   resolving: 'Finding videos…',
   ready: 'Ready — pick what to download',
+  empty: 'Nothing to download',
   downloading: 'Downloading…',
   done: 'Finished',
   error: 'Stopped',
@@ -967,7 +970,7 @@ async function poll() {
     $('summary').innerHTML = html;
   }
 
-  if (s.phase === 'done' || s.phase === 'error' || s.phase === 'ready') {
+  if (['done', 'error', 'ready', 'empty'].includes(s.phase)) {
     clearInterval(timer);
     busy(false);
     if (s.phase !== 'ready') $('dl').disabled = picked.size === 0;

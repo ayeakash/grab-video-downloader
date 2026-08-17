@@ -219,12 +219,12 @@ def download_opts(cfg: Config, platform: str, state: dict | None = None) -> dict
 # --------------------------------------------------------------------------
 
 
-def expand_source(src: Source, cfg: Config, jar=None, on_note=None) -> list[VideoTask]:
+def expand_source(src: Source, cfg: Config, jar=None, on_note=None, should_stop=None) -> list[VideoTask]:
     """Turn one Source into concrete video tasks."""
     note = on_note or (lambda _msg: None)
 
     if src.platform == "instagram" and src.kind == "profile":
-        return _expand_instagram_profile(src, cfg, jar, note)
+        return _expand_instagram_profile(src, cfg, jar, note, should_stop)
 
     if src.is_container:
         return _expand_with_ytdlp(src, cfg, note)
@@ -232,12 +232,18 @@ def expand_source(src: Source, cfg: Config, jar=None, on_note=None) -> list[Vide
     return [VideoTask(url=src.url, platform=src.platform, origin=src.label, video_id=src.label)]
 
 
-def _expand_instagram_profile(src: Source, cfg: Config, jar, note) -> list[VideoTask]:
+def _expand_instagram_profile(src: Source, cfg: Config, jar, note, should_stop=None) -> list[VideoTask]:
     from .instagram import InstagramError, list_profile_videos
 
-    note(f"Listing reels for @{src.label} (Instagram is slow here, please wait)")
+    note(f"Listing reels for @{src.label}…")
     try:
-        items = list_profile_videos(src.label, jar=jar, limit=cfg.limit)
+        items = list_profile_videos(
+            src.label,
+            jar=jar,
+            limit=cfg.limit,
+            should_stop=should_stop,
+            on_progress=note,
+        )
     except InstagramError as exc:
         note(f"[red]@{src.label}: {exc}[/red]")
         return []

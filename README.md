@@ -119,10 +119,16 @@ Make it the default so you stop typing it:
 ./grab --cookies-browser chrome --save-config
 ```
 
+Without a session, listing a profile now fails **immediately** with that
+message rather than appearing to hang. This matters because instaloader's
+built-in reaction to Instagram's rate limiting is to sleep until its sliding
+window clears — up to about eleven minutes, silently. `grab` caps any single
+wait at 12s and the total at 45s, then gives up with an explanation.
+
 Instagram also rate-limits hard. Downloads from it are deliberately serialized
 with a delay between each; if you start seeing failures, wait 10–15 minutes.
 Pointing this at a very large profile in one go is the fastest way to get
-temporarily blocked.
+temporarily blocked — set **Max per page** to keep listings short.
 
 > On macOS, reading Chrome cookies may prompt for your Keychain password, and
 > Safari requires Full Disk Access for your terminal.
