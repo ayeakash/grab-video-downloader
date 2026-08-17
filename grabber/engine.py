@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -131,6 +132,27 @@ def _match_filter(cfg: Config, state: dict | None = None):
     return check
 
 
+MEDIA_SUFFIXES = {".mp4", ".mkv", ".webm", ".mov", ".mp3", ".m4a", ".opus"}
+ID_IN_NAME = re.compile(r"\[([A-Za-z0-9_-]{5,})\]")
+
+
+def scan_media_ids(root: Path) -> set[str]:
+    """Video ids of the media actually present under root.
+
+    The output template ends every filename with [id], which is what makes the
+    archive checkable against reality rather than trusted blindly.
+    """
+    found: set[str] = set()
+    if not root.exists():
+        return found
+    for path in root.rglob("*"):
+        if path.is_file() and path.suffix.lower() in MEDIA_SUFFIXES:
+            match = ID_IN_NAME.search(path.name)
+            if match:
+                found.add(match.group(1))
+    return found
+
+
 def load_archive_ids(path: Path) -> set[str]:
     """Read a yt-dlp archive file ("<extractor> <id>" per line) into an id set."""
     if not path.exists():
@@ -171,7 +193,9 @@ def base_opts(cfg: Config) -> dict:
     return opts
 
 
-def download_opts(cfg: Config, platform: str, state: dict | None = None) -> dict:
+def download_opts(
+    cfg: Config, platform: str, state: dict | None = None, ignore_archive: bool = False
+) -> dict:
     out_root = Path(cfg.out_dir) / PLATFORM_DIRS.get(platform, "Other")
     name_tmpl = (
         "%(uploader,channel,uploader_id,id)s/"
@@ -196,9 +220,12 @@ def download_opts(cfg: Config, platform: str, state: dict | None = None) -> dict
         }
     )
 
-    if cfg.use_archive:
+    if cfg.use_archive and not ignore_archive:
         cfg.archive_path.parent.mkdir(parents=True, exist_ok=True)
         opts["download_archive"] = str(cfg.archive_path)
+    # ignore_archive is for re-fetching a file that vanished. The id is still
+    # recorded, so the archive is simply left out rather than rewritten: the
+    # download proceeds and the existing entry stays accurate afterwards.
 
     if cfg.since or cfg.until:
         from yt_dlp.utils import DateRange
@@ -441,6 +468,9 @@ class Downloader:
         self._rows: dict[int, int] = {}
         # Checked up front so re-running a big channel costs no network calls.
         self._archived = load_archive_ids(cfg.archive_path) if cfg.use_archive else set()
+        # An archived id with no file behind it is a stale claim, not a skip.
+        on_disk = scan_media_ids(Path(cfg.out_dir)) if cfg.use_archive else set()
+        self.missing_ids = self._archived - on_disk
 
     def run(self, tasks: list[VideoTask]) -> Report:
         report = Report()
@@ -486,8 +516,11 @@ class Downloader:
         from yt_dlp import YoutubeDL
         from yt_dlp.utils import DownloadError, ExistingVideoReached, MaxDownloadsReached
 
-        if task.video_id and task.video_id in self._archived:
+        stale = task.video_id in self.missing_ids
+        if task.video_id and task.video_id in self._archived and not stale:
             return Outcome(task, "skipped", "already downloaded")
+        if stale and not self.cfg.redownload_missing:
+            return Outcome(task, "skipped", "in archive but the file is gone")
 
         logger = _Silent()
         state: dict = {"started": False, "path": None, "filtered": None}
@@ -502,7 +535,7 @@ class Downloader:
                 state["started"] = True
                 state["path"] = status.get("filename")
 
-        opts = download_opts(self.cfg, task.platform, state)
+        opts = download_opts(self.cfg, task.platform, state, ignore_archive=stale)
         opts["logger"] = logger
         opts["progress_hooks"] = [hook]
 

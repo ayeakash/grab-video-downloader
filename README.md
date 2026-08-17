@@ -245,6 +245,16 @@ The `[VIDEOID]` suffix is what makes re-runs safe, so keep it.
 
 - **Skipping is instant.** Re-running a channel checks the local archive first
   and makes no network calls for videos you already have.
+- **Only successes are recorded.** A download that fails, or that you stop
+  part-way, is never written to the archive, so the next run retries it.
+  Interrupted files keep their `.part` and resume rather than restarting.
+- **Deleted a file? It will not come back on its own.** The archive stores
+  video ids, not paths, so anything you delete or move still counts as "have
+  it". `grab` now notices — it compares the archive against the `[id]` in the
+  filenames actually on disk and tells you how many are missing. Tick
+  **Re-download missing** (or `--redownload-missing`) to fetch them again.
+  It is off by default so that moving your library to another drive does not
+  trigger a full re-download.
 - **Failures don't stop the batch.** Anything that fails lands in
   `downloads/failed.txt`; retry with `./grab -f downloads/failed.txt`.
 - **Interrupting is safe.** Ctrl-C leaves partial files that resume next run.

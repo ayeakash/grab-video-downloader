@@ -51,6 +51,10 @@ class Config:
 
     use_archive: bool = True
     archive_name: str = ".downloaded.txt"
+    # The archive records ids, not paths, so a file you delete or move stays
+    # marked as "have it" and is skipped forever. Off by default: people who
+    # move finished videos to another drive would otherwise re-fetch the lot.
+    redownload_missing: bool = False
 
     cookies_browser: str | None = None
     cookies_file: str | None = None

@@ -251,6 +251,7 @@ def build_config(options: dict) -> Config:
     cfg.audio_only = bool(options.get("audio"))
     cfg.use_archive = not options.get("noArchive")
     cfg.ig_gentle = bool(options.get("igGentle"))
+    cfg.redownload_missing = bool(options.get("redownloadMissing"))
 
     browser = (options.get("cookiesBrowser") or "").strip()
     cfg.cookies_browser = browser or None
@@ -345,7 +346,14 @@ def _download(state: JobState, tasks: list[VideoTask], options: dict) -> None:
     state.note(f"Downloading {len(tasks)} video(s) with {cfg.jobs} worker(s)")
     state.set_phase("downloading")
 
-    report = Downloader(cfg, WebProgress(state), cancel=state.cancel).run(tasks)
+    downloader = Downloader(cfg, WebProgress(state), cancel=state.cancel)
+    gone = sum(1 for t in tasks if t.video_id in downloader.missing_ids)
+    if gone and not cfg.redownload_missing:
+        state.note(
+            f"{gone} of these are in the archive but missing from disk — tick "
+            "'Re-download missing' to fetch them again."
+        )
+    report = downloader.run(tasks)
 
     with state.lock:
         state.summary = {
@@ -780,6 +788,7 @@ ig:natgeo"></textarea>
       <label><input type="checkbox" id="audio"> Audio only (mp3)</label>
       <label><input type="checkbox" id="noArchive"> Re-download existing</label>
       <label><input type="checkbox" id="igGentle"> Gentle Instagram pace</label>
+      <label><input type="checkbox" id="redownloadMissing"> Re-download missing</label>
     </div>
     <div class="hint">Gentle pace downloads Instagram one at a time with a 4s gap —
       slower, but less likely to get you rate-limited.</div>
@@ -839,6 +848,7 @@ function options() {
     audio: $('audio').checked,
     noArchive: $('noArchive').checked,
     igGentle: $('igGentle').checked,
+    redownloadMissing: $('redownloadMissing').checked,
   };
 }
 
