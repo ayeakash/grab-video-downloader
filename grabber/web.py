@@ -12,6 +12,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -64,21 +65,34 @@ def _descendant_pids(root_pid: int) -> list[int]:
 def _kill_program(state: "JobState") -> None:
     """Terminate downloads, helper processes, worker threads, and this server."""
     state.cancel.set()
-    # yt-dlp runs in this process, while ffmpeg and similar helpers are child
-    # processes. Kill deepest descendants first so none are orphaned when the
-    # Python server exits.
-    descendants = _descendant_pids(os.getpid())
-    for pid in reversed(descendants):
+    if sys.platform == "win32":
+        # There is no SIGKILL on Windows, and no ps to walk. taskkill /T does
+        # the whole tree in one call.
         try:
-            os.kill(pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(os.getpid())],
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
             pass
-    time.sleep(0.35)
-    for pid in reversed(descendants):
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
+    else:
+        # yt-dlp runs in this process, while ffmpeg and similar helpers are child
+        # processes. Kill deepest descendants first so none are orphaned when the
+        # Python server exits.
+        descendants = _descendant_pids(os.getpid())
+        for pid in reversed(descendants):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+        time.sleep(0.35)
+        for pid in reversed(descendants):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
 
     # Python cannot safely kill arbitrary worker threads. Exiting the process
     # is the reliable way to stop blocked resolver/download threads as well as
@@ -409,6 +423,16 @@ def download_selected_job(state: JobState, indexes: list[int], options: dict) ->
         state.set_phase("error")
 
 
+def _open_folder(target: Path) -> None:
+    """Reveal a directory in the platform's file manager."""
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", str(target)])
+    elif sys.platform == "win32":
+        os.startfile(str(target))  # noqa: S606 - the only reliable way on Windows
+    else:
+        subprocess.Popen(["xdg-open", str(target)])
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "grab"
     state: JobState
@@ -534,7 +558,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/reveal":
             target = Path(self.state.out_dir or ".")
             if target.exists():
-                subprocess.Popen(["open", str(target)])
+                _open_folder(target)
                 self._json({"ok": True})
             else:
                 self._json({"ok": False, "error": "Nothing downloaded yet."}, 404)

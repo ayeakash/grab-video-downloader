@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import configparser
 import json
+import os
+import sys
 from http.cookiejar import CookieJar
 from pathlib import Path
 
@@ -65,15 +67,50 @@ def load_jar(cookies_file: str | None, cookies_browser: str | None) -> CookieJar
             raise CookieError(f"Could not read cookies: {exc}") from exc
 
 
-# macOS data directories, relative to ~/Library/Application Support.
+# Where each browser keeps its profile metadata, per platform. Only these
+# locations differ across systems -- yt-dlp already handles the platform
+# differences for the cookie stores themselves.
 CHROMIUM_DIRS = {
-    "chrome": "Google/Chrome",
-    "chromium": "Chromium",
-    "brave": "BraveSoftware/Brave-Browser",
-    "edge": "Microsoft Edge",
-    "vivaldi": "Vivaldi",
-    "opera": "com.operasoftware.Opera",
+    "darwin": {
+        "chrome": "Google/Chrome",
+        "chromium": "Chromium",
+        "brave": "BraveSoftware/Brave-Browser",
+        "edge": "Microsoft Edge",
+        "vivaldi": "Vivaldi",
+        "opera": "com.operasoftware.Opera",
+    },
+    "win32": {
+        "chrome": "Google/Chrome/User Data",
+        "chromium": "Chromium/User Data",
+        "brave": "BraveSoftware/Brave-Browser/User Data",
+        "edge": "Microsoft/Edge/User Data",
+        "vivaldi": "Vivaldi/User Data",
+    },
+    "linux": {
+        "chrome": "google-chrome",
+        "chromium": "chromium",
+        "brave": "BraveSoftware/Brave-Browser",
+        "edge": "microsoft-edge",
+        "vivaldi": "vivaldi",
+    },
 }
+
+
+def _support_root() -> Path:
+    """Base directory holding per-browser data for the current platform."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support"
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+
+def _platform_key() -> str:
+    if sys.platform == "darwin":
+        return "darwin"
+    if sys.platform == "win32":
+        return "win32"
+    return "linux"
 
 
 def _chromium_profiles(browser: str, root: Path) -> list[dict]:
@@ -124,22 +161,34 @@ def list_browser_profiles() -> list[dict]:
     A browser with several profiles is the usual reason an Instagram session
     "isn't found": the bare browser name only ever means its default profile.
     """
-    support = Path.home() / "Library" / "Application Support"
+    support = _support_root()
     options: list[dict] = []
 
-    for browser, relative in CHROMIUM_DIRS.items():
+    for browser, relative in CHROMIUM_DIRS[_platform_key()].items():
         root = support / relative
         if root.is_dir():
             options.extend(_chromium_profiles(browser, root))
 
-    firefox = support / "Firefox"
-    if firefox.is_dir():
-        options.extend(_firefox_profiles(firefox))
+    for firefox in _firefox_roots():
+        if firefox.is_dir():
+            options.extend(_firefox_profiles(firefox))
+            break
 
-    if (Path.home() / "Library" / "Cookies").is_dir() or Path("/Applications/Safari.app").exists():
+    # Safari is macOS only.
+    if sys.platform == "darwin" and Path("/Applications/Safari.app").exists():
         options.append({"value": "safari", "label": "Safari"})
 
     return options
+
+
+def _firefox_roots() -> list[Path]:
+    home = Path.home()
+    if sys.platform == "darwin":
+        return [home / "Library" / "Application Support" / "Firefox"]
+    if sys.platform == "win32":
+        appdata = Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming")
+        return [appdata / "Mozilla" / "Firefox"]
+    return [home / ".mozilla" / "firefox"]
 
 
 def instagram_cookies(jar: CookieJar | None) -> dict[str, str]:

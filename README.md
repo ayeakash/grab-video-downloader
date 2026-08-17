@@ -8,9 +8,27 @@ them down in parallel. Re-running never re-downloads what you already have.
 
 ## Setup
 
+### macOS / Linux
+
 ```bash
 ./setup.sh
 ```
+
+### Windows
+
+```bat
+setup.bat
+```
+
+Then use `grab.bat` wherever this README says `./grab` — e.g. `grab.bat --web`.
+You need [Python](https://python.org) (tick **Add python.exe to PATH** during
+install) and ffmpeg (`winget install Gyan.FFmpeg`). The browser-profile picker
+covers Chrome, Edge, Brave, Vivaldi, Chromium and Firefox; Safari is macOS only.
+
+> Windows support is written but **untested** — this was built and verified on
+> macOS. The engine and the web UI are plain cross-platform Python, so the
+> likely failures are environmental (Python or ffmpeg not on PATH) rather than
+> logical. Please report anything that breaks.
 
 That creates a `.venv`, installs `yt-dlp` + `instaloader`, and installs `ffmpeg`
 via Homebrew if it is missing. Then confirm everything is wired up:
