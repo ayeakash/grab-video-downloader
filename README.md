@@ -196,6 +196,22 @@ Things that did help, and are now the defaults:
 To genuinely go faster you need fewer bytes: use **Max per page**, or `-q 720`
 on YouTube (roughly halves the size; on Instagram it changes nothing).
 
+### When a profile refuses to list
+
+Some Instagram accounts — business-category ones in particular — make
+Instagram's own `web_profile_info` endpoint answer with:
+
+```
+400 Bad Request — Asset asset://laser.provider/ig_business_category_subvertical
+has been deleted. You cannot use this schema
+```
+
+That is a fault on Instagram's side. It happens **identically whether or not
+you are logged in**, so it is not a session problem and logging in will not fix
+it. `grab` detects it and silently retries the listing through `gallery-dl`,
+which reads the reels tab by a different route. The same fallback also covers
+instaloader being rate-limited, so a 401 mid-listing is usually recovered too.
+
 ### Instagram speed
 
 Instagram downloads run 3 at a time with a 1s gap. Tick **Gentle Instagram

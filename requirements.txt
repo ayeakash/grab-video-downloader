@@ -1,3 +1,7 @@
 yt-dlp[default]>=2026.7.4
 instaloader>=4.15.3
+# Fallback profile lister. Instagram's web_profile_info endpoint returns HTTP
+# 400 for business-category accounts, which instaloader cannot work around;
+# gallery-dl reads the reels tab by another route.
+gallery-dl>=1.32.9
 rich>=13.7

@@ -28,6 +28,9 @@ MAX_SINGLE_WAIT = 90.0
 ANON_TOTAL_WAIT = 420.0
 AUTH_TOTAL_WAIT = 90.0
 
+# Ceiling for the gallery-dl fallback, which runs as a subprocess.
+GALLERY_DL_TIMEOUT = 300.0
+
 
 class InstagramError(RuntimeError):
     pass
@@ -112,6 +115,84 @@ def _build_loader(jar: CookieJar | None, should_stop, budget: dict, progress=Non
             loader.context.username = username
 
     return loader
+
+
+def _gallery_dl_profile(
+    username: str, limit: int | None, cookies_browser: str | None, progress
+) -> list[ProfileItem]:
+    """List a profile's reels with gallery-dl instead of instaloader.
+
+    instaloader resolves profiles through Instagram's web_profile_info
+    endpoint, which currently returns HTTP 400 for accounts carrying a
+    business category ("Asset ig_business_category_subvertical has been
+    deleted"). That is an Instagram-side fault, identical logged in or out,
+    so no amount of session fixing helps. gallery-dl reads the reels tab by a
+    different route and is unaffected.
+    """
+    import json
+    import subprocess
+    import sys
+
+    command = [sys.executable, "-m", "gallery_dl", "--dump-json", "--quiet"]
+    if limit:
+        command += ["--range", f"1-{limit}"]
+    if cookies_browser:
+        # gallery-dl's BROWSER[:PROFILE] spelling matches ours already.
+        command += ["--cookies-from-browser", cookies_browser]
+    command.append(f"https://www.instagram.com/{username}/reels/")
+
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=GALLERY_DL_TIMEOUT
+        )
+    except FileNotFoundError as exc:
+        raise InstagramError("gallery-dl is not installed; run ./setup.sh again") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise InstagramError(
+            f"Listing @{username} with gallery-dl timed out after "
+            f"{GALLERY_DL_TIMEOUT:.0f}s. Set 'Max per page' to fetch fewer."
+        ) from exc
+
+    if not result.stdout.strip():
+        detail = " ".join((result.stderr or "").split())[:200]
+        raise InstagramError(
+            f"Neither instaloader nor gallery-dl could list @{username}."
+            + (f" gallery-dl said: {detail}" if detail else "")
+        )
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise InstagramError(f"Could not read gallery-dl's output for @{username}") from exc
+
+    items: list[ProfileItem] = []
+    seen: set[str] = set()
+    for entry in payload:
+        meta = entry[-1] if isinstance(entry, list) and entry else None
+        if not isinstance(meta, dict):
+            continue
+        code = meta.get("shortcode") or meta.get("post_shortcode")
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        caption = (meta.get("description") or "").strip()
+        date = str(meta.get("date") or "")[:10].replace("-", "")
+        items.append(
+            ProfileItem(
+                url=meta.get("post_url") or f"https://www.instagram.com/reel/{code}/",
+                shortcode=code,
+                duration=None,
+                title=caption.splitlines()[0][:80] if caption else code,
+                date=date or None,
+                thumbnail=meta.get("display_url") or "",
+                owner=meta.get("username") or username,
+            )
+        )
+        if limit and len(items) >= limit:
+            break
+
+    progress(f"  @{username}: gallery-dl found {len(items)} reel(s)")
+    return items
 
 
 def check_session(jar: CookieJar | None) -> dict:
@@ -210,6 +291,18 @@ def _friendly(exc: Exception, username: str, logged_in: bool) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+def _is_instagram_schema_bug(exc: Exception) -> bool:
+    """Detect Instagram's broken web_profile_info response.
+
+    Business-category accounts currently make that endpoint return HTTP 400
+    with an "Asset ... has been deleted. You cannot use this schema" body.
+    It is unrelated to authentication -- it fails identically with and
+    without a session -- so it must not be reported as a login problem.
+    """
+    text = str(exc)
+    return "has been deleted" in text and "schema" in text
+
+
 def _aborted_message(exc: InstagramAborted, username: str) -> str:
     if str(exc) == "stopped":
         return f"Stopped while listing @{username}."
@@ -227,6 +320,7 @@ def list_profile_videos(
     prefer_reels: bool = True,
     should_stop=None,
     on_progress=None,
+    cookies_browser: str | None = None,
 ) -> list[ProfileItem]:
     """Return video posts for a profile, newest first."""
     try:
@@ -264,7 +358,19 @@ def list_profile_videos(
     except InstagramAborted as exc:
         raise InstagramError(_aborted_message(exc, username)) from exc
     except (InstaloaderException, OSError) as exc:
-        raise InstagramError(_friendly(exc, username, logged_in)) from exc
+        if _is_instagram_schema_bug(exc):
+            progress(
+                f"  Instagram's profile endpoint is broken for @{username} "
+                "(a fault on their side, not your login) — trying gallery-dl instead."
+            )
+        else:
+            progress(f"  instaloader could not list @{username}: {exc}")
+        try:
+            return _gallery_dl_profile(username, limit, cookies_browser, progress)
+        except InstagramError as fallback_exc:
+            if _is_instagram_schema_bug(exc):
+                raise fallback_exc from exc
+            raise InstagramError(_friendly(exc, username, logged_in)) from exc
 
     try:
         if profile.is_private and not profile.followed_by_viewer:

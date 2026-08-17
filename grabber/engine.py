@@ -263,6 +263,7 @@ def _expand_instagram_profile(
             limit=cfg.limit,
             should_stop=should_stop,
             on_progress=note,
+            cookies_browser=cfg.cookies_browser,
         )
     except InstagramError as exc:
         note(f"[red]@{src.label}: {exc}[/red]")
