@@ -252,6 +252,7 @@ def build_config(options: dict) -> Config:
     cfg.use_archive = not options.get("noArchive")
     cfg.ig_gentle = bool(options.get("igGentle"))
     cfg.redownload_missing = bool(options.get("redownloadMissing"))
+    cfg.date_folders = not options.get("noDateFolders")
 
     browser = (options.get("cookiesBrowser") or "").strip()
     cfg.cookies_browser = browser or None
@@ -805,6 +806,7 @@ ig:natgeo"></textarea>
       <label><input type="checkbox" id="noArchive"> Re-download existing</label>
       <label><input type="checkbox" id="igGentle"> Gentle Instagram pace</label>
       <label><input type="checkbox" id="redownloadMissing"> Re-download missing</label>
+      <label><input type="checkbox" id="noDateFolders"> No date folders</label>
     </div>
     <div class="hint">Gentle pace downloads Instagram one at a time with a 4s gap —
       slower, but less likely to get you rate-limited.</div>
@@ -865,6 +867,7 @@ function options() {
     noArchive: $('noArchive').checked,
     igGentle: $('igGentle').checked,
     redownloadMissing: $('redownloadMissing').checked,
+    noDateFolders: $('noDateFolders').checked,
   };
 }
 

@@ -102,6 +102,11 @@ examples:
         action="store_true",
         help="Re-fetch videos that are in the archive but no longer on disk.",
     )
+    parser.add_argument(
+        "--no-date-folders",
+        action="store_true",
+        help="Save straight into the output dir instead of a folder per day.",
+    )
     parser.add_argument("--thumbnail", action="store_true", help="Also save/embed thumbnails.")
     parser.add_argument("--info-json", action="store_true", help="Save metadata JSON per video.")
 
@@ -158,6 +163,8 @@ def apply_args(cfg: Config, args) -> Config:
         cfg.use_archive = False
     if args.redownload_missing:
         cfg.redownload_missing = True
+    if args.no_date_folders:
+        cfg.date_folders = False
     if args.thumbnail:
         cfg.write_thumbnail = True
     if args.info_json:

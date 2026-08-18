@@ -229,15 +229,25 @@ the listing and the download short.
 
 ```
 downloads/
-├── YouTube/
-│   └── ChannelName/
-│       └── 2026-07-10 Video Title [VIDEOID].mp4
-├── Instagram/
-│   └── accountname/
-│       └── 2026-07-02 Caption text [SHORTCODE].mp4
+├── 2026-08-18/              ← one folder per day you download
+│   ├── YouTube/
+│   │   └── ChannelName/
+│   │       └── 2026-07-10 Video Title [VIDEOID].mp4
+│   └── Instagram/
+│       └── accountname/
+│           └── 2026-07-02 Caption text [SHORTCODE].mp4
+├── 2026-08-17/
 ├── .downloaded.txt     ← the archive; delete to allow re-downloads
 └── failed.txt          ← written when something fails; retry with -f
 ```
+
+Each run goes into a folder named for the day it ran, so a day's haul is easy
+to find, review or move. The date is fixed once per run, so a long job that
+crosses midnight stays in one folder rather than splitting.
+
+The archive deliberately sits **above** the date folders, so de-duplication
+still spans days: a video grabbed yesterday is not fetched again today. Turn
+the layout off with **No date folders** in the UI, or `--no-date-folders`.
 
 The `[VIDEOID]` suffix is what makes re-runs safe, so keep it.
 

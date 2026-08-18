@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field, fields
+from datetime import date
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -66,6 +67,12 @@ class Config:
     quality: str = "1080"  # best | 2160 | 1440 | 1080 | 720 | 480
     audio_only: bool = False
 
+    # Sort downloads into a folder per day, e.g. downloads/2026-08-18/YouTube/...
+    # The archive deliberately stays at the top level so de-duplication still
+    # works across days: a video grabbed yesterday is not fetched again today.
+    date_folders: bool = True
+    run_date: str = ""
+
     use_archive: bool = True
     archive_name: str = ".downloaded.txt"
     # The archive records ids, not paths, so a file you delete or move stays
@@ -87,6 +94,16 @@ class Config:
     until: str | None = None  # YYYYMMDD
 
     retries: int = 10
+
+    def stamp_run_date(self) -> str:
+        """Date folder for this run, fixed on first use.
+
+        Computed once rather than per file so a long run that crosses midnight
+        stays in one folder instead of splitting in half.
+        """
+        if not self.run_date:
+            self.run_date = date.today().isoformat()
+        return self.run_date
 
     @property
     def archive_path(self) -> Path:
@@ -115,4 +132,9 @@ class Config:
         return cfg
 
     def save(self, path: Path = CONFIG_PATH) -> None:
-        path.write_text(json.dumps(asdict(self), indent=2) + "\n", encoding="utf-8")
+        data = asdict(self)
+        # run_date is per-run scratch, not a preference. Persisting it would
+        # freeze every future download into the folder for the day this was
+        # first saved.
+        data.pop("run_date", None)
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

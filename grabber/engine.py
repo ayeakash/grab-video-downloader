@@ -196,7 +196,10 @@ def base_opts(cfg: Config) -> dict:
 def download_opts(
     cfg: Config, platform: str, state: dict | None = None, ignore_archive: bool = False
 ) -> dict:
-    out_root = Path(cfg.out_dir) / PLATFORM_DIRS.get(platform, "Other")
+    out_root = Path(cfg.out_dir)
+    if cfg.date_folders:
+        out_root = out_root / cfg.stamp_run_date()
+    out_root = out_root / PLATFORM_DIRS.get(platform, "Other")
     name_tmpl = (
         "%(uploader,channel,uploader_id,id)s/"
         "%(upload_date>%Y-%m-%d,release_date>%Y-%m-%d,epoch>%Y-%m-%d|undated)s "
